@@ -936,7 +936,7 @@ CREATE OR REPLACE VIEW view_reporte_salud_paciente AS
 SELECT p.nombre_paciente, p.apellido_paciente, ps.nombre_problema AS problema, ps.categoria
 FROM pacientes p
 JOIN paciente_problema pp ON p.id_paciente = pp.id_paciente
-JOIN problemas_salud ps ON pp.problema_salud = ps.problema_salud
+JOIN problemas_salud ps ON pp.problema_salud = ps.problema_salud;
 
 -- 6. Creación de usuarios y permisos 
 -- ------USUARIOS--------------
