@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
 --
-*.sql text eol=lf
+
 CREATE DATABASE IF NOT EXISTS clinica;
 USE clinica;
 
@@ -780,6 +780,201 @@ INSERT INTO `quirurgico` VALUES (32,'Alta'),(35,'Alta'),(37,'Alta'),(39,'Media')
 /*!40000 ALTER TABLE `quirurgico` ENABLE KEYS */;
 UNLOCK TABLES;
 
+
+-- 1.  ÍNDICES
+
+CREATE INDEX idx_paciente_apellido ON pacientes(apellido_paciente);
+CREATE INDEX idx_paciente_nombre ON pacientes(nombre_paciente);
+CREATE INDEX idx_producto_nombre ON productos(nombre_producto);
+CREATE INDEX idx_producto_enfermera ON productos(id_enfermera);
+CREATE INDEX idx_citas_fecha ON citas(fecha_cita);
+
+
+-- 2. TRIGGERS
+DROP TRIGGER IF EXISTS tr_actualizar_stock_entrega;
+DROP TRIGGER IF EXISTS tr_validar_precio_tratamiento;
+
+DELIMITER //
+
+-- Trigger 1: Actualizar stock de productos (Tabla: productos, Columna: stock)
+CREATE TRIGGER tr_actualizar_stock_entrega
+AFTER INSERT ON detalle_entrega
+FOR EACH ROW
+BEGIN
+    UPDATE productos 
+    SET disponibilidad = disponibilidad + 1 
+    WHERE id_producto = NEW.id_producto;
+END //
+
+-- Trigger 2: Validar que el precio de un tratamiento no sea negativo al actualizar
+
+
+CREATE TRIGGER tr_validar_precio_tratamiento
+BEFORE UPDATE ON tratamientos
+FOR EACH ROW
+BEGIN
+    IF NEW.costo <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Error: El costo debe ser mayor que 0.';
+    END IF;
+END//
+
+DELIMITER ;
+
+
+-- =========================
+-- PROCEDURE: PACIENTES
+-- =========================
+DROP PROCEDURE IF EXISTS sp_gestion_pacientes;
+
+DELIMITER //
+
+CREATE PROCEDURE sp_gestion_pacientes(
+    IN p_accion VARCHAR(10),
+    IN p_id INT,
+    IN p_fecha_nac DATE,
+    IN p_nombre VARCHAR(30),
+    IN p_apellido VARCHAR(30),
+    IN p_telefono INT,
+    IN p_direccion VARCHAR(100),
+    IN p_correo VARCHAR(50)
+)
+BEGIN
+    -- Handler: si algo falla, revierte toda la transacción
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Error: Operación fallida. Verifique los datos.';
+    END;
+
+    START TRANSACTION;
+
+    IF p_accion = 'INSERT' THEN
+        INSERT INTO pacientes (fecha_nacimiento, nombre_paciente, apellido_paciente, telefono, direccion, correo)
+        VALUES (p_fecha_nac, p_nombre, p_apellido, p_telefono, p_direccion, p_correo);
+
+    ELSEIF p_accion = 'UPDATE' THEN
+        IF NOT EXISTS (SELECT 1 FROM pacientes WHERE id_paciente = p_id) THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: El ID del paciente no existe.';
+        END IF;
+
+        UPDATE pacientes
+        SET fecha_nacimiento = p_fecha_nac,
+            nombre_paciente = p_nombre,
+            apellido_paciente = p_apellido,
+            telefono = p_telefono,
+            direccion = p_direccion,
+            correo = p_correo
+        WHERE id_paciente = p_id;
+
+    ELSEIF p_accion = 'DELETE' THEN
+        IF NOT EXISTS (SELECT 1 FROM pacientes WHERE id_paciente = p_id) THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: El ID del paciente no existe.';
+        END IF;
+
+        DELETE FROM pacientes WHERE id_paciente = p_id;
+
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Acción no reconocida (Use INSERT, UPDATE o DELETE).';
+    END IF;
+
+    COMMIT;
+END //
+DELIMITER ;
+
+-- 4. REPORTES 
+
+-- Reporte 1: Citas con nombres de Pacientes y Profesionales
+
+CREATE OR REPLACE VIEW view_reporte_citas AS
+SELECT c.id_cita, p.nombre_paciente AS nombre_paciente, p.apellido_paciente AS apellido_paciente, 
+       prof.nombre_prof AS nombre_profesional, c.fecha_cita, c.estado_cita
+FROM citas c
+JOIN pacientes p
+    ON p.id_paciente = c.id_paciente
+JOIN citas_procedimientos cp
+    ON cp.id_cita = c.id_cita
+JOIN procedimientos pr
+    ON pr.id_procedimiento = cp.id_procedimiento
+JOIN tratamientos t
+    ON t.id_tratamiento = pr.id_tratamiento
+JOIN profesionales_tratamientos pt
+    ON pt.id_tratamiento = t.id_tratamiento AND pt.rol = 'Titular'
+JOIN profesionales prof
+    ON prof.id_profesional = pt.id_profesional;
+
+
+
+-- Reporte 2: Facturación detallada
+CREATE OR REPLACE VIEW view_reporte_facturas AS
+SELECT f.id_factura, p.nombre_paciente, p.apellido_paciente, f.subtotal, f.metodo_pago, f.estado_pago
+FROM facturas f
+JOIN pacientes p ON f.id_paciente = p.id_paciente;
+
+
+-- Reporte 3: Inventario Detallado 
+
+CREATE OR REPLACE VIEW view_reporte_inventario AS
+SELECT
+    pr.id_producto,
+    pr.nombre_producto,
+    pr.disponibilidad,
+    pr.marca,
+    pr.categoria,
+    prov.nombre_proveedor AS proveedor,
+    de.fecha_ingreso,
+    de.observaciones_producto
+FROM productos pr
+JOIN detalle_entrega de
+    ON de.id_producto = pr.id_producto
+JOIN proveedor prov
+    ON prov.id_proveedor = de.id_proveedor;
+
+-- Reporte 4: Problemas de salud por paciente
+CREATE OR REPLACE VIEW view_reporte_salud_paciente AS
+SELECT p.nombre_paciente, p.apellido_paciente, ps.nombre_problema AS problema, ps.categoria
+FROM pacientes p
+JOIN paciente_problema pp ON p.id_paciente = pp.id_paciente
+JOIN problemas_salud ps ON pp.problema_salud = ps.problema_salud
+
+-- 6. Creación de usuarios y permisos 
+-- ------USUARIOS--------------
+CREATE USER IF NOT EXISTS 'administrador'@'localhost' IDENTIFIED BY 'Admin123'; -- Usuario 1 
+CREATE USER IF NOT EXISTS 'recepcionista'@'localhost' IDENTIFIED BY 'Recep123'; -- Usuario 2
+CREATE USER IF NOT EXISTS 'medico'@'localhost' IDENTIFIED BY 'Medico123'; -- Usuario 3
+CREATE USER IF NOT EXISTS 'proveedor'@'localhost' IDENTIFIED BY 'Proveedor123' PASSWORD EXPIRE; -- Usuario 4
+CREATE USER IF NOT EXISTS 'auditor'@'localhost' IDENTIFIED BY 'Auditor123' PASSWORD EXPIRE; -- -- Usuario 5
+
+-- ------PERMISOS DEL ADMINISTRADOR ( Usuario 1 )------
+GRANT ALL PRIVILEGES ON clinica.* TO 'administrador'@'localhost';
+
+-- ------ PERMISOS DEL RECEPCIONISTA (Usuario 2) -----
+GRANT SELECT, INSERT, UPDATE ON clinica.pacientes TO 'recepcionista'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON clinica.citas TO 'recepcionista'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON clinica.facturas TO 'recepcionista'@'localhost';
+-- Permiso a Stored Procedure :
+GRANT EXECUTE ON PROCEDURE clinica.sp_gestion_pacientes TO 'recepcionista'@'localhost';
+-- Permiso a Vista:
+GRANT SELECT ON clinica.view_reporte_citas TO 'recepcionista'@'localhost';
+
+-- --------PERMISOS DEL MÉDICO / ESPECIALISTA ( Usuario 3)-----
+GRANT SELECT, UPDATE ON clinica.pacientes TO 'medico'@'localhost';
+GRANT SELECT, UPDATE ON clinica.tratamientos TO 'medico'@'localhost';
+-- Permisos a Vistas:
+GRANT SELECT ON clinica.view_reporte_citas TO 'medico'@'localhost';
+GRANT SELECT ON clinica.view_reporte_salud_paciente TO 'medico'@'localhost';
+-- ----------PERMISOS DEL ENCARGADO PROVEEDOR(Usuario 4)-----------
+GRANT SELECT, UPDATE ON clinica.productos TO 'proveedor'@'localhost';
+GRANT SELECT, UPDATE ON clinica.proveedor TO 'proveedor'@'localhost';
+-- Permiso a Vista:
+GRANT SELECT ON clinica.view_reporte_inventario TO 'proveedor'@'localhost';
+
+-- -------------PERMISOS DEL AUDITOR(Usuario 5)---------
+GRANT SELECT ON clinica.view_reporte_facturas TO 'auditor'@'localhost';
+GRANT SELECT ON clinica.view_reporte_inventario TO 'auditor'@'localhost';
+
+FLUSH PRIVILEGES;
 
 
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
