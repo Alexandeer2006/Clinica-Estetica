@@ -11,14 +11,12 @@ def conectar_bd():
         return mysql.connector.connect(
             host='localhost',
             user='root',
-            password='Alex89ander',  # Tu contraseña
+            password='Zuleyka#2006',  # Tu contraseña
             database='clinica'
         )
     except Error as e:
         messagebox.showerror("Error de Conexión", str(e))
         return None
-"Reporte Citas"
-
 
 # ==========================
 # 2. FUNCIONES AUXILIARES
@@ -41,7 +39,6 @@ def mostrar_resultados(titulo, resultados):
     text_area.pack(expand=True, fill="both")
     tk.Button(v_res, text="Cerrar", command=v_res.destroy).pack()
 
-
 # ==========================
 # 3. MÓDULO PACIENTES
 # ==========================
@@ -59,7 +56,11 @@ def agregar_paciente():
         )
         if all(datos):
             try:
-                cur.callproc("sp_gestion_pacientes", ("INSERT", None, fecha, nombre, apellido, tel, direccion, correo))
+                cur.execute("""
+                    INSERT INTO pacientes 
+                    (nombre_paciente, apellido_paciente, fecha_nacimiento, telefono, direccion, correo) 
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                """, datos)
                 con.commit()
                 messagebox.showinfo("OK", "Paciente agregado")
             except Error as e:
@@ -90,7 +91,7 @@ def editar_paciente():
     if con:
         idp = simpledialog.askinteger("Editar", "ID Paciente:")
         if idp:
-            col = simpledialog.askstring("Editar", "Columna (nombre_paciente, apellido_paciente, telefono, correo):")
+            col = simpledialog.askstring("Editar", "Columna (fecha_nacimiento, nombre_paciente, apellido_paciente, telefono, direccion, correo):")
             val = simpledialog.askstring("Editar", "Nuevo Valor:")
             if col and val:
                 try:
@@ -126,7 +127,7 @@ def agregar_cita():
         datos = (
             simpledialog.askstring("Cita", "Fecha (YYYY-MM-DD):"),
             simpledialog.askstring("Cita", "Hora (HH:MM:SS):"),
-            simpledialog.askstring("Cita", "Estado (Pendiente/Confirmada):"),
+            simpledialog.askstring("Cita", "Estado (Pendiente/Confirmada/Atendida/Cancelada):"),
             simpledialog.askstring("Cita", "Observación:"),
             simpledialog.askinteger("Cita", "ID Paciente:")
         )
@@ -152,7 +153,7 @@ def editar_cita():
     if con:
         idc = simpledialog.askinteger("Editar", "ID Cita:")
         if idc:
-            col = simpledialog.askstring("Editar", "Campo (fecha_cita, hora_cita, estado_cita):")
+            col = simpledialog.askstring("Editar", "Campo (fecha_cita, hora_cita, estado_cita, observacion, id_paciente):")
             val = simpledialog.askstring("Editar", "Nuevo Valor:")
             if col and val:
                 try:
@@ -232,7 +233,7 @@ def editar_factura():
     if con:
         idf = simpledialog.askinteger("Editar", "ID Factura:")
         if idf:
-            col = simpledialog.askstring("Editar", "Campo (estado_pago, metodo_pago, subtotal):")
+            col = simpledialog.askstring("Editar", "Campo (fecha, descuento, estado_pago, metodo_pago, subtotal, id_recepcionista, id_paciente):")
             val = simpledialog.askstring("Editar", "Nuevo Valor:")
             if col and val:
                 try:
@@ -341,7 +342,7 @@ def eliminar_producto():
         con.close()
 
 # ==========================
-# 7. MÓDULO PROFESIONALES (CORREGIDO HERENCIA)
+# 7. MÓDULO PROFESIONALES
 # ==========================
 def agregar_profesional():
     con = conectar_bd()
@@ -358,20 +359,18 @@ def agregar_profesional():
             tipo = simpledialog.askstring("Profesional", "Tipo (doctor/cosmetologo):").lower()
 
             if id_prof and nombre and tipo in ['doctor', 'cosmetologo']:
-                # 1. Insertar en Padre
+
                 sql_padre = """INSERT INTO profesionales 
-                               (id_profesional, nombre_prof, apellido_prof, fecha_nacimiento, correo_profesional, telefono, salario, tipo_prof) 
+                               (id_profesional, nombre_prof, apellido_prof, fecha_nacimiento, 
+                                correo_profesional, telefono, salario, tipo_prof) 
                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"""
+
                 cur.execute(sql_padre, (id_prof, nombre, apellido, fecha, correo, tel, salario, tipo))
 
-                # 2. Insertar en Hijo
-                if tipo == 'doctor':
-                    cur.execute("INSERT INTO doctor (id_doctor) VALUES (%s)", (id_prof,))
-                elif tipo == 'cosmetologo':
-                    cur.execute("INSERT INTO cosmetologo (id_cosmetologo) VALUES (%s)", (id_prof,))
 
                 con.commit()
-                messagebox.showinfo("OK", f"Profesional ({tipo}) registrado exitosamente.")
+                messagebox.showinfo("OK",
+                                    f"Profesional ({tipo}) registrado exitosamente.\n(Tablas sincronizadas por Trigger)")
             else:
                 messagebox.showwarning("Error", "Datos incompletos o tipo incorrecto")
         except Error as e:
@@ -388,19 +387,21 @@ def listar_profesionales():
         mostrar_resultados("Profesionales", cur.fetchall())
         con.close()
 
+
 def editar_profesional():
     con = conectar_bd()
     if con:
         idp = simpledialog.askinteger("Editar", "ID Profesional:")
         if idp:
-            col = simpledialog.askstring("Editar", "Campo (telefono, correo_profesional, salario):")
+            col = simpledialog.askstring("Editar", "Campo (nombre_prof, apellido_prof, fecha_nacimiento, correo_profesional, telefono, salario, tipo_prof):")
             val = simpledialog.askstring("Editar", "Nuevo Valor:")
             if col and val:
                 try:
                     cur = con.cursor()
+
                     cur.execute(f"UPDATE profesionales SET {col}=%s WHERE id_profesional=%s", (val, idp))
                     con.commit()
-                    messagebox.showinfo("OK", "Profesional actualizado")
+                    messagebox.showinfo("OK", "Datos actualizados en todo el sistema")
                 except Error as e:
                     messagebox.showerror("Error", str(e))
         con.close()
@@ -452,7 +453,7 @@ def agregar_tratamiento():
                     det = simpledialog.askstring("Detalle", "Tipo (Alta/Media/Baja):")
                     cur.execute("INSERT INTO quirurgico (id_quirurgico, tipo_quirurgico) VALUES (%s, %s)", (id_gen, det))
                 elif "no" in tipo.lower(): # Captura 'No quirurgico'
-                    det = simpledialog.askstring("Detalle", "Tipo (Facial/Corporal):")
+                    det = simpledialog.askstring("Detalle", "Tipo:")
                     cur.execute("INSERT INTO no_quirurgico (id_no_quirurgico, tipo_no_quirurgico) VALUES (%s, %s)", (id_gen, det))
 
                 con.commit()
