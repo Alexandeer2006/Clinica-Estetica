@@ -299,11 +299,10 @@ CREATE TABLE `profesionales` (
 
 
 LOCK TABLES `profesionales` WRITE;
-/*!40000 ALTER TABLE `profesionales` DISABLE KEYS */;
+/*!40000 ALTER TABLE profesionales DISABLE KEYS */;
 INSERT INTO `profesionales` VALUES (1,'Carlos','Mendoza','1980-05-12','cmendoza@clinica.com',987654321,2500.00,'doctor'),(2,'Ana','Torres','1985-08-20','atorres@clinica.com',987654322,2300.00,'doctor'),(3,'Luis','Vera','1990-03-15','lvera@clinica.com',987654323,1800.00,'cosmetologo'),(4,'Maria','Paz','1992-07-01','mpaz@clinica.com',987654324,1800.00,'cosmetologo'),(5,'Jorge','Rios','1988-11-10','jrios@clinica.com',987654325,2600.00,'doctor'),(6,'Paula','Leon','1991-01-05','pleon@clinica.com',987654326,2000.00,'cosmetologo'),(7,'Ricardo','Salas','1983-04-18','rsalas@clinica.com',987654327,2700.00,'doctor'),(8,'Diana','Moreno','1994-09-22','dmoreno@clinica.com',987654328,1900.00,'cosmetologo'),(9,'Fernando','Cruz','1987-06-30','fcruz@clinica.com',987654329,2550.00,'doctor'),(10,'Lucia','Benitez','1993-12-14','lbenitez@clinica.com',987654330,1850.00,'cosmetologo');
-/*!40000 ALTER TABLE `profesionales` ENABLE KEYS */;
+/*!40000 ALTER TABLE profesionales ENABLE KEYS */;
 UNLOCK TABLES;
-
 
 
 
@@ -316,6 +315,8 @@ DROP TABLE IF EXISTS `doctor`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `doctor` (
   `id_doctor` int NOT NULL,
+  `nombre` varchar(35),
+  `apellido` varchar(35),
   PRIMARY KEY (`id_doctor`),
   CONSTRAINT `doctor_ibfk_1` FOREIGN KEY (`id_doctor`) REFERENCES `profesionales` (`id_profesional`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -326,9 +327,14 @@ CREATE TABLE `doctor` (
 --
 
 LOCK TABLES `doctor` WRITE;
-/*!40000 ALTER TABLE `doctor` DISABLE KEYS */;
-INSERT INTO `doctor` VALUES (1),(2),(5),(7),(9);
-/*!40000 ALTER TABLE `doctor` ENABLE KEYS */;
+/*!40000 ALTER TABLE doctor DISABLE KEYS */;
+INSERT INTO `doctor` (id_doctor, nombre, apellido) VALUES 
+(1, 'Carlos', 'Mendoza'),
+(2, 'Ana', 'Torres'),
+(5, 'Jorge', 'Rios'),
+(7, 'Ricardo', 'Salas'),
+(9, 'Fernando', 'Cruz');
+/*!40000 ALTER TABLE doctor ENABLE KEYS */;
 UNLOCK TABLES;
 
 
@@ -342,6 +348,8 @@ DROP TABLE IF EXISTS `cosmetologo`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `cosmetologo` (
   `id_cosmetologo` int NOT NULL,
+  `nombre` varchar(35),
+  `apellido` varchar(35),
   PRIMARY KEY (`id_cosmetologo`),
   CONSTRAINT `cosmetologo_ibfk_1` FOREIGN KEY (`id_cosmetologo`) REFERENCES `profesionales` (`id_profesional`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -352,9 +360,14 @@ CREATE TABLE `cosmetologo` (
 --
 
 LOCK TABLES `cosmetologo` WRITE;
-/*!40000 ALTER TABLE `cosmetologo` DISABLE KEYS */;
-INSERT INTO `cosmetologo` VALUES (3),(4),(6),(8),(10);
-/*!40000 ALTER TABLE `cosmetologo` ENABLE KEYS */;
+/*!40000 ALTER TABLE cosmetologo DISABLE KEYS */;
+INSERT INTO `cosmetologo` (id_cosmetologo, nombre, apellido) VALUES 
+(3, 'Luis', 'Vera'),
+(4, 'Maria', 'Paz'),
+(6, 'Paula', 'Leon'),
+(8, 'Diana', 'Moreno'),
+(10, 'Lucia', 'Benitez');
+/*!40000 ALTER TABLE cosmetologo ENABLE KEYS */;
 UNLOCK TABLES;
 
 
@@ -821,7 +834,64 @@ END//
 
 DELIMITER ;
 
+-- Trigger para cuando INSERTAS un nuevo profesional
+DELIMITER //
+CREATE TRIGGER tras_insertar_profesional
+AFTER INSERT ON profesionales
+FOR EACH ROW
+BEGIN
+    IF NEW.tipo_prof = 'doctor' THEN
+        INSERT INTO doctor (id_doctor, nombre, apellido) 
+        VALUES (NEW.id_profesional, NEW.nombre_prof, NEW.apellido_prof);
+    ELSEIF NEW.tipo_prof = 'cosmetologo' THEN
+        INSERT INTO cosmetologo (id_cosmetologo, nombre, apellido) 
+        VALUES (NEW.id_profesional, NEW.nombre_prof, NEW.apellido_prof);
+    END IF;
+END//
+-- Trigger para cuando EDITAS (Update) un profesional existente
+DROP TRIGGER IF EXISTS tras_actualizar_profesional;
 
+DELIMITER //
+CREATE TRIGGER tras_actualizar_profesional
+AFTER UPDATE ON profesionales
+FOR EACH ROW
+BEGIN
+    -- CASO 1: El tipo de profesional CAMBIÓ (Ej: de cosmetologo a doctor)
+    IF OLD.tipo_prof <> NEW.tipo_prof THEN
+        -- Borramos de la tabla donde estaba antes
+        IF OLD.tipo_prof = 'doctor' THEN DELETE FROM doctor WHERE id_doctor = OLD.id_profesional;
+        ELSEIF OLD.tipo_prof = 'cosmetologo' THEN DELETE FROM cosmetologo WHERE id_cosmetologo = OLD.id_profesional;
+        END IF;
+
+        -- Insertamos en la nueva tabla con los datos actuales
+        IF NEW.tipo_prof = 'doctor' THEN 
+            INSERT INTO doctor (id_doctor, nombre, apellido) VALUES (NEW.id_profesional, NEW.nombre_prof, NEW.apellido_prof);
+        ELSEIF NEW.tipo_prof = 'cosmetologo' THEN 
+            INSERT INTO cosmetologo (id_cosmetologo, nombre, apellido) VALUES (NEW.id_profesional, NEW.nombre_prof, NEW.apellido_prof);
+        END IF;
+
+    -- CASO 2: El tipo es el MISMO, pero cambiaron nombre o apellido
+    ELSE
+        IF NEW.tipo_prof = 'doctor' THEN
+            UPDATE doctor SET nombre = NEW.nombre_prof, apellido = NEW.apellido_prof WHERE id_doctor = NEW.id_profesional;
+        ELSEIF NEW.tipo_prof = 'cosmetologo' THEN
+            UPDATE cosmetologo SET nombre = NEW.nombre_prof, apellido = NEW.apellido_prof WHERE id_cosmetologo = NEW.id_profesional;
+        END IF;
+    END IF;
+END//
+DELIMITER ;
+
+
+-- Trigger para evitar datos basura
+DELIMITER //
+CREATE TRIGGER tras_eliminar_profesional
+AFTER DELETE ON profesionales
+FOR EACH ROW
+BEGIN
+    DELETE FROM doctor WHERE id_doctor = OLD.id_profesional;
+    DELETE FROM cosmetologo WHERE id_cosmetologo = OLD.id_profesional;
+END//
+DELIMITER ;
 -- =========================
 -- PROCEDURE: PACIENTES
 -- =========================

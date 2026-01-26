@@ -17,6 +17,8 @@ def conectar_bd():
     except Error as e:
         messagebox.showerror("Error de Conexión", str(e))
         return None
+"Reporte Citas"
+
 
 # ==========================
 # 2. FUNCIONES AUXILIARES
@@ -39,6 +41,7 @@ def mostrar_resultados(titulo, resultados):
     text_area.pack(expand=True, fill="both")
     tk.Button(v_res, text="Cerrar", command=v_res.destroy).pack()
 
+
 # ==========================
 # 3. MÓDULO PACIENTES
 # ==========================
@@ -56,11 +59,7 @@ def agregar_paciente():
         )
         if all(datos):
             try:
-                cur.execute("""
-                    INSERT INTO pacientes 
-                    (nombre_paciente, apellido_paciente, fecha_nacimiento, telefono, direccion, correo) 
-                    VALUES (%s,%s,%s,%s,%s,%s)
-                """, datos)
+                cur.callproc("sp_gestion_pacientes", ("INSERT", None, fecha, nombre, apellido, tel, direccion, correo))
                 con.commit()
                 messagebox.showinfo("OK", "Paciente agregado")
             except Error as e:
@@ -315,7 +314,7 @@ def editar_producto():
     if con:
         idp = simpledialog.askinteger("Editar", "ID Producto:")
         if idp:
-            col = simpledialog.askstring("Editar", "Campo (stock, precio_unitario, marca):")
+            col = simpledialog.askstring("Editar", "Campo (disponibilidad, precio_unitario, marca):")
             val = simpledialog.askstring("Editar", "Nuevo Valor:")
             if col and val:
                 try:
